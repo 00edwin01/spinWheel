@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Spin the Wheel</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f0f4f8;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+    }
+
+    .wheel-container {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      margin: 0 auto;
+    }
+
+    .wheel {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 5px solid #333;
+      background: conic-gradient(
+        #ff7675 0deg 60deg,
+        #74b9ff 60deg 120deg,
+        #55efc4 120deg 180deg,
+        #ffeaa7 180deg 240deg,
+        #fd79a8 240deg 300deg,
+        #fab1a0 300deg 360deg
+      );
+      position: relative;
+      transition: transform 4s cubic-bezier(0.33, 1, 0.68, 1);
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+
+    .wheel.spinning {
+      box-shadow: 0 0 25px 10px #00cec9;
+    }
+
+    /* Each icon sits at 50%/50% (center of wheel), then uses its inline top/left + transforms */
+    .segment-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 48px;
+      height: 48px;
+    }
+
+    .pointer {
+      width: 0; 
+      height: 0;
+      border-left: 20px solid transparent;
+      border-right: 20px solid transparent;
+      border-bottom: 30px solid #2d3436;
+      position: absolute;
+      top: -25px;
+      left: calc(50% - 20px);
+    }
+
+    .spin-btn {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 1.2em;
+      background: #0984e3;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .spin-btn:disabled {
+      background: #b2bec3;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 20px;
+      font-size: 1.4em;
+      color: #2d3436;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="wheel-container">
+      <div class="pointer"></div>
+      <div class="wheel" id="wheel">
+        <!-- Your icons with inline top/left tweaks preserved: -->
+        <img
+          src="https://img.icons8.com/emoji/48/000000/money-bag-emoji.png"
+          class="segment-icon"
+          style="transform: rotate(30deg) translateY(-120px) rotate(-30deg); left: 40%;"
+        />
+        <img
+          src="https://img.icons8.com/emoji/48/000000/sad-but-relieved-face.png"
+          class="segment-icon"
+          style="transform: rotate(90deg) translateY(-120px) rotate(-90deg); top: 45%; left: 35%;"
+        />
+        <img
+          src="https://img.icons8.com/emoji/48/000000/party-popper.png"
+          class="segment-icon"
+          style="transform: rotate(150deg) translateY(-120px) rotate(-150deg); top: 35%; left: 37%;"
+        />
+        <img
+          src="https://img.icons8.com/emoji/48/000000/sad-but-relieved-face.png"
+          class="segment-icon"
+          style="transform: rotate(210deg) translateY(-120px) rotate(-210deg); top: 35%; left: 45%;"
+        />
+        <img
+          src="https://img.icons8.com/emoji/48/000000/star-emoji.png"
+          class="segment-icon"
+          style="transform: rotate(270deg) translateY(-120px) rotate(-270deg); top: 45%;"
+        />
+        <img
+          src="https://img.icons8.com/emoji/48/000000/sad-but-relieved-face.png"
+          class="segment-icon"
+          style="transform: rotate(330deg) translateY(-120px) rotate(-330deg); left: 45%;"
+        />
+      </div>
+    </div>
+    <button class="spin-btn" id="spinBtn">SPIN</button>
+    <div class="result" id="result"></div>
+  </div>
+
+  <!-- Sound effects -->
+  <audio id="spinSound" src="./spin-232536.mp3"></audio>
+  <audio id="winSound" src="./winning-218995.mp3"></audio>
+  <audio id="loseSound" src="./falled-sound-effect-278635.mp3"></audio>
+
+  <script>
+    const wheel = document.getElementById("wheel");
+    const spinBtn = document.getElementById("spinBtn");
+    const resultEl = document.getElementById("result");
+    const spinSound = document.getElementById("spinSound");
+    const winSound = document.getElementById("winSound");
+    const loseSound = document.getElementById("loseSound");
+
+    const segments       = ["$100", "Try Again", "$50", "Lose", "×2", "No Luck"];
+    const winningIndexes = [0, 2, 4];
+    const losingIndexes = [1, 3, 5];
+    const segmentAngle   = 360 / segments.length; // 60°
+    let isSpinning       = false;
+
+    // === NEW: Tap‐gesture logic ===
+    let leftTapCount = 0;
+    let rightTapCount = 0;
+    // isWin: null = no override; true = force win; false = force lose
+    let isWin = true;
+
+    function onScreenTouch(event) {
+        // get Y coordinate of tap (for both mouse and touch events)
+        let clientY;
+        let clientX;
+        if (event.type === "touchend" && event.changedTouches) {
+          clientY = event.changedTouches[0].clientY;
+          clientX = event.changedTouches[0].clientX;
+        } else if (event.type === "click") {
+          clientY = event.clientY;
+          clientX = event.clientX;
+        } else {
+          leftTapCount = 0;
+          rightTapCount = 0;
+          return;
+        }
+  
+        const halfway = window.innerHeight / 2;
+        if (clientY < halfway) {
+          // tapped on upper 50%
+          if (clientX < window.innerWidth / 2) {
+            leftTapCount++;
+            rightTapCount = 0;
+          } else {
+            rightTapCount++;
+            leftTapCount = 0;
+          }
+        } else {
+          // tapped on lower half → reset
+          leftTapCount = 0;
+          rightTapCount = 0;
+        }
+  
+        if (leftTapCount === 3) {
+          isWin = false;
+          leftTapCount = 0;
+          rightTapCount = 0;
+          console.log("Override: isWin = false");
+        } else if (rightTapCount === 3) {
+          isWin = true;
+          leftTapCount = 0;
+          rightTapCount = 0;
+          console.log("Override: isWin = true");
+        }
+      }
+  
+      // Listen for both touchend (mobile) and click (desktop)
+      document.addEventListener("touchend", onScreenTouch);
+      document.addEventListener("click", onScreenTouch);
+
+    spinBtn.addEventListener("click", () => {
+      if (isSpinning) return;
+      isSpinning = true;
+      spinBtn.disabled = true;
+      resultEl.textContent = "";
+
+      // — STEP 1: Snap back to 0° instantly (no animation) —
+      wheel.style.transition = "none";
+      wheel.style.transform  = "rotate(0deg)";
+
+      // Force a reflow so the browser applies the 0° rotation immediately:
+      wheel.getBoundingClientRect();
+
+      // — STEP 2: Re-enable the spin‐animation transition —
+      wheel.style.transition = "transform 4s cubic-bezier(0.33, 1, 0.68, 1)";
+
+      // — STEP 3: Choose a random segment and compute its stop angle —
+      let randomIndex   = Math.floor(Math.random() * segments.length);
+      if (isWin && losingIndexes.includes(randomIndex)) {
+        randomIndex--;
+      } else if ((!isWin) && winningIndexes.includes(randomIndex)) {
+        randomIndex++;
+      }
+      console.log(randomIndex);
+      const sliceMidAngle = randomIndex * segmentAngle + segmentAngle / 2; 
+      // To bring that slice’s midpoint up under the pointer, rotate to (360 - sliceMidAngle):
+      const stopAngle     = 360 - sliceMidAngle;
+      const fullSpinsDeg  = 5 * 360;
+      const newRotation   = fullSpinsDeg + stopAngle;
+
+      // — STEP 4: Start spin: add glow, play spin sound, then rotate —
+      wheel.classList.add("spinning");
+      spinSound.currentTime = 0;
+      spinSound.play();
+      wheel.style.transform = `rotate(${newRotation}deg)`;
+
+      // — STEP 5: After 4s animation (+200ms), show result and play win/lose sound —
+      setTimeout(() => {
+        wheel.classList.remove("spinning");
+
+        let prize = segments[randomIndex];
+        resultEl.textContent = `🎉 Result: ${prize}!`;
+
+        if (isWin) {
+          winSound.currentTime = 0;
+          winSound.play();
+        } else {
+          loseSound.currentTime = 0;
+          loseSound.play();
+        }
+
+        isSpinning = false;
+        spinBtn.disabled = false;
+      }, 4200);
+    });
+  </script>
+</body>
+</html>
